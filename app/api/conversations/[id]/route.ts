@@ -11,6 +11,7 @@ import { db } from "@/lib/db";
 import { UpdateConversationSchema } from "@/lib/validators";
 import { successResponse, errorResponse } from "@/lib/utils";
 import { ZodError } from "zod";
+import { withAuth, isAuthError } from "@/lib/middleware/auth";
 
 type RouteContext = { params: Promise<{ id: string }> };
 
@@ -18,7 +19,10 @@ type RouteContext = { params: Promise<{ id: string }> };
  * GET /api/conversations/:id
  * Returns the conversation details plus its full message history.
  */
-export async function GET(_req: NextRequest, { params }: RouteContext) {
+export async function GET(req: NextRequest, { params }: RouteContext) {
+  const auth = await withAuth(req);
+  if (isAuthError(auth)) return auth;
+
   const { id } = await params;
 
   const conversation = await db.conversation.findUnique({
@@ -29,7 +33,7 @@ export async function GET(_req: NextRequest, { params }: RouteContext) {
     },
   });
 
-  if (!conversation) {
+  if (!conversation || conversation.userId !== auth.id) {
     return NextResponse.json(errorResponse("Conversation not found"), {
       status: 404,
     });
@@ -55,10 +59,13 @@ export async function GET(_req: NextRequest, { params }: RouteContext) {
  * allowing the user to view the history.
  */
 export async function PATCH(req: NextRequest, { params }: RouteContext) {
+  const auth = await withAuth(req);
+  if (isAuthError(auth)) return auth;
+
   const { id } = await params;
 
   const existing = await db.conversation.findUnique({ where: { id } });
-  if (!existing) {
+  if (!existing || existing.userId !== auth.id) {
     return NextResponse.json(errorResponse("Conversation not found"), {
       status: 404,
     });
@@ -107,11 +114,14 @@ export async function PATCH(req: NextRequest, { params }: RouteContext) {
  * Hard-deletes the conversation, all its messages, and all related logs.
  * This is irreversible. For soft-delete, use PATCH with status: "cancelled".
  */
-export async function DELETE(_req: NextRequest, { params }: RouteContext) {
+export async function DELETE(req: NextRequest, { params }: RouteContext) {
+  const auth = await withAuth(req);
+  if (isAuthError(auth)) return auth;
+
   const { id } = await params;
 
   const existing = await db.conversation.findUnique({ where: { id } });
-  if (!existing) {
+  if (!existing || existing.userId !== auth.id) {
     return NextResponse.json(errorResponse("Conversation not found"), {
       status: 404,
     });

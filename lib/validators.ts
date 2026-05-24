@@ -16,6 +16,7 @@ export const ChatRequestSchema = z.object({
   conversationId: z.string().cuid().optional(),
   model: z.string().min(1).max(100).default("llama-3.3-70b-versatile"),
   apiKey: z.string().optional(),
+  provider: z.string().optional(),
 });
 
 // ──────────────────────────────────────────────

@@ -10,6 +10,7 @@ import { db } from "@/lib/db";
 import { CreateConversationSchema, PaginationSchema } from "@/lib/validators";
 import { successResponse, errorResponse } from "@/lib/utils";
 import { ZodError } from "zod";
+import { withAuth, isAuthError } from "@/lib/middleware/auth";
 
 /**
  * GET /api/conversations
@@ -22,6 +23,9 @@ import { ZodError } from "zod";
  * Returns conversations ordered by most recently updated.
  */
 export async function GET(req: NextRequest) {
+  const auth = await withAuth(req);
+  if (isAuthError(auth)) return auth;
+
   const { searchParams } = req.nextUrl;
 
   let page = 1,
@@ -38,7 +42,9 @@ export async function GET(req: NextRequest) {
   }
 
   const statusFilter = searchParams.get("status");
-  const where = statusFilter ? { status: statusFilter } : {};
+  const where = statusFilter
+    ? { userId: auth.id, status: statusFilter }
+    : { userId: auth.id };
 
   const [conversations, total] = await Promise.all([
     db.conversation.findMany({
@@ -83,6 +89,9 @@ export async function GET(req: NextRequest) {
  * before the first message is sent.
  */
 export async function POST(req: NextRequest) {
+  const auth = await withAuth(req);
+  if (isAuthError(auth)) return auth;
+
   let body: unknown;
   try {
     body = await req.json();
@@ -108,6 +117,7 @@ export async function POST(req: NextRequest) {
       title: input.title ?? "New Chat",
       model: input.model,
       provider: input.provider,
+      userId: auth.id,
     },
   });
 

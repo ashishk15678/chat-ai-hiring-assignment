@@ -9,6 +9,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { successResponse, errorResponse } from "@/lib/utils";
 import { z, ZodError } from "zod";
+import { withAuth, isAuthError } from "@/lib/middleware/auth";
 
 type RouteContext = { params: Promise<{ id: string }> };
 
@@ -18,14 +19,17 @@ type RouteContext = { params: Promise<{ id: string }> };
  * Returns all messages for the conversation ordered chronologically.
  * Used by the frontend to load conversation history when resuming a chat.
  */
-export async function GET(_req: NextRequest, { params }: RouteContext) {
+export async function GET(req: NextRequest, { params }: RouteContext) {
+  const auth = await withAuth(req);
+  if (isAuthError(auth)) return auth;
+
   const { id } = await params;
 
   const conversation = await db.conversation.findUnique({
     where: { id },
-    select: { id: true },
+    select: { id: true, userId: true },
   });
-  if (!conversation) {
+  if (!conversation || conversation.userId !== auth.id) {
     return NextResponse.json(errorResponse("Conversation not found"), {
       status: 404,
     });
@@ -55,13 +59,16 @@ const AddMessageSchema = z.object({
  *   content — message text
  */
 export async function POST(req: NextRequest, { params }: RouteContext) {
+  const auth = await withAuth(req);
+  if (isAuthError(auth)) return auth;
+
   const { id } = await params;
 
   const conversation = await db.conversation.findUnique({
     where: { id },
-    select: { id: true, status: true },
+    select: { id: true, status: true, userId: true },
   });
-  if (!conversation) {
+  if (!conversation || conversation.userId !== auth.id) {
     return NextResponse.json(errorResponse("Conversation not found"), {
       status: 404,
     });

@@ -1,17 +1,7 @@
-// lib/rate-limit.ts
-//
-// Uses @upstash/ratelimit backed by Upstash Redis.
-// Falls back to a no-op limiter when UPSTASH_REDIS_REST_URL is not set
-// (e.g. local dev without Redis).
-
 import { Ratelimit } from "@upstash/ratelimit";
 import { Redis } from "@upstash/redis";
 import { NextRequest, NextResponse } from "next/server";
 import { errorResponse } from "@/lib/utils";
-
-// ──────────────────────────────────────────────
-// Redis client (lazy — only created when env vars present)
-// ──────────────────────────────────────────────
 
 function getRedis(): Redis | null {
   if (
@@ -26,15 +16,6 @@ function getRedis(): Redis | null {
   });
 }
 
-// ──────────────────────────────────────────────
-// Pre-configured limiters
-// ──────────────────────────────────────────────
-
-/**
- * chat   — 20 requests per minute per IP (streaming is expensive)
- * api    — 60 requests per minute per IP (general API endpoints)
- * auth   — 10 requests per minute per IP (login / register brute-force guard)
- */
 type LimiterType = "chat" | "api" | "auth";
 
 const configs: Record<LimiterType, { requests: number; window: string }> = {
@@ -67,10 +48,6 @@ function getLimiter(type: LimiterType): Ratelimit | null {
   return limiterCache.get(type)!;
 }
 
-// ──────────────────────────────────────────────
-// Helpers
-// ──────────────────────────────────────────────
-
 function getIp(req: NextRequest): string {
   return (
     req.headers.get("x-forwarded-for")?.split(",")[0].trim() ??
@@ -79,14 +56,6 @@ function getIp(req: NextRequest): string {
   );
 }
 
-/**
- * Check rate limit for a request.
- * Returns a 429 NextResponse if the limit is exceeded, otherwise null.
- *
- * @example
- * const limited = await checkRateLimit(req, "chat");
- * if (limited) return limited;
- */
 export async function checkRateLimit(
   req: NextRequest,
   type: LimiterType = "api",
@@ -117,9 +86,6 @@ export async function checkRateLimit(
   return null;
 }
 
-/**
- * Returns rate-limit headers to attach to successful responses.
- */
 export async function getRateLimitHeaders(
   req: NextRequest,
   type: LimiterType = "api",

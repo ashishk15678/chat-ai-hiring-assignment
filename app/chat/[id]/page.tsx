@@ -1,18 +1,26 @@
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { db } from "@/lib/db";
 import { ChatArea } from "@/components/chat/ChatArea";
+import { getSessionUser } from "@/lib/session";
 
 interface Props {
   params: Promise<{ id: string }>;
 }
 
 export async function generateMetadata({ params }: Props) {
+  const user = await getSessionUser();
+  if (!user) {
+    return { title: "Chat — LLM Logger" };
+  }
   const { id } = await params;
   const conv = await db.conversation.findUnique({
     where: { id },
-    select: { title: true },
+    select: { title: true, userId: true },
   });
-  return { title: conv ? `${conv.title} — LLM Logger` : "Chat — LLM Logger" };
+  if (!conv || conv.userId !== user.id) {
+    return { title: "Chat — LLM Logger" };
+  }
+  return { title: `${conv.title} — LLM Logger` };
 }
 
 /**
@@ -21,6 +29,10 @@ export async function generateMetadata({ params }: Props) {
  * so the useChat hook is pre-populated (no loading flash).
  */
 export default async function ConversationPage({ params }: Props) {
+  const user = await getSessionUser();
+  if (!user) {
+    redirect("/login");
+  }
   const { id } = await params;
 
   const conversation = await db.conversation.findUnique({
@@ -30,7 +42,7 @@ export default async function ConversationPage({ params }: Props) {
     },
   });
 
-  if (!conversation) notFound();
+  if (!conversation || conversation.userId !== user.id) notFound();
 
   // Map DB messages to the shape useChat expects
   const initialMessages = conversation.messages.map((m) => ({

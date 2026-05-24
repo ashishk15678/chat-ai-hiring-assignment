@@ -643,10 +643,11 @@ export class LLMLoggerSDK {
   }
 
   /**
-   * Fetch the currently logged-in user from the session.
-   * Call once after constructing the SDK to re-hydrate auth state.
+   * Initialize the SDK with implicit login.
+   * Fetches or creates the current session user automatically.
+   * Always returns a SessionUser (implicit login creates one if needed).
    */
-  async init(): Promise<SessionUser | null> {
+  async init(): Promise<SessionUser> {
     return this.auth.me();
   }
 

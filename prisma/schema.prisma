@@ -18,6 +18,8 @@ model User {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
+  conversations Conversation[]
+
   @@map("users")
 }
 
@@ -27,13 +29,16 @@ model Conversation {
   model       String    @default("llama-3.3-70b-versatile")
   provider    String    @default("groq")
   status      String    @default("active")
+  userId      String?
   cancelledAt DateTime?
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 
+  user     User?     @relation(fields: [userId], references: [id], onDelete: Cascade)
   messages Message[]
   logs     InferenceLog[]
 
+  @@index([userId])
   @@map("conversations")
 }
 

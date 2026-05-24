@@ -1,3 +1,22 @@
+# Interview Checklist & Status
+
+## Core Requirements
+- [x] **GitHub Repository**: Complete source code and configurations.
+- [x] **README**: Setup instructions, architecture overview, schema design decisions, tradeoffs, and improvements.
+- [x] **Architecture Notes**: Ingestion flow, logging strategy, scaling, and failure handling assumptions.
+- [x] **Demo**: Walkthrough guide, diagrams, and logs.
+
+## Bonus Requirements
+- [x] **Multi-provider support**: Dynamically routes requests to Groq, OpenAI, or Anthropic based on parameters or model prefixes.
+- [x] **Streaming Responses**: Implemented real-time SSE chat streaming via Vercel AI SDK and Groq models.
+- [x] **Latency + Throughput + Errors dashboards**: Live dashboard tracks request counts, token consumption, latencies, success rates, and errors.
+- [x] **Docker Compose one-command setup**: Fully configured multi-stage Dockerfile and docker-compose.yml with SQLite database persistence.
+- [x] **Event based architecture**: Event-driven client-side SDK that fires typed events for request lifecycle, auth, stream chunks/start/finish, and log status.
+- [x] **PII redaction**: Filters emails, API keys, and credit cards from inputs and outputs before writing to DB.
+- [ ] **Deploy application on self-hosted k8s**: Setup runs on local environment.
+
+---
+
 # LLM Logger & Event-Driven TypeScript SDK
 
 [![Build Status](https://img.shields.io/badge/Build-Passing-brightgreen?style=for-the-badge)](#)
@@ -60,6 +79,73 @@ sequenceDiagram
 
 ---
 
+## Screenshots & Screen Recordings
+
+<details>
+<summary>📸 <strong>Chat Interface Screenshot</strong> - Click to view</summary>
+
+The main chat interface showing real-time streaming responses:
+
+![Chat Interface](screenshots/Screenshot%20From%202026-05-24%2023-30-51.png)
+
+Features visible:
+- Clean, minimalist chat UI
+- Model selection dropdown
+- Real-time message streaming
+- Conversation ID display
+- User-friendly message input area
+</details>
+
+<details>
+<summary>📸 <strong>Analytics Dashboard Screenshot</strong> - Click to view</summary>
+
+The comprehensive analytics dashboard tracking system metrics:
+
+![Analytics Dashboard](screenshots/Screenshot%20From%202026-05-24%2023-31-09.png)
+
+Displays:
+- Token consumption metrics
+- Request counts and statistics
+- Response latency tracking
+- Error rate visualization
+- Historical activity trends
+- Per-model performance breakdown
+</details>
+
+<details>
+<summary>📸 <strong>Multi-Conversation View Screenshot</strong> - Click to view</summary>
+
+User's conversation history and management interface:
+
+![Conversation List](screenshots/Screenshot%20From%202026-05-24%2023-32-29.png)
+
+Includes:
+- List of all user conversations
+- Conversation metadata (title, model, creation date)
+- Quick access to past conversations
+- Conversation status indicators
+- Easy navigation between chats
+</details>
+
+<details>
+<summary>🎬 <strong>Screen Recording - Full Demo Walkthrough</strong> - Click to view</summary>
+
+Complete demonstration of the application workflow:
+
+![Demo Recording](screenshots/Screencast%20From%202026-05-24%2023-31-26.webm)
+
+The recording demonstrates:
+- ✓ User navigating to the chat interface
+- ✓ Sending a message to the LLM
+- ✓ Real-time streaming response display
+- ✓ Token count and latency tracking
+- ✓ Analytics dashboard metrics update
+- ✓ Conversation history preservation
+- ✓ Switching between conversations
+</details>
+
+---
+
 ## Getting Started
 
 ### Prerequisites
@@ -96,6 +182,8 @@ UPSTASH_REDIS_REST_TOKEN="your_upstash_token"
 
 ### Setup Instructions
 
+#### Option A: Running Locally (NPM/Bun)
+
 1. **Install Dependencies**:
    ```bash
    bun install
@@ -115,6 +203,21 @@ UPSTASH_REDIS_REST_TOKEN="your_upstash_token"
    npm run dev
    ```
    Open `http://localhost:3000` to access the web application.
+
+#### Option B: Running with Docker Compose (One-Command Setup)
+
+To build and run the application in a production-ready containerized environment with database persistence:
+
+1. **Start the containers**:
+   ```bash
+   # Set API keys in your terminal and launch
+   export GROQ_API_KEY="gsk_..."
+   export OPENAI_API_KEY="sk_..."
+   export ANTHROPIC_API_KEY="sk-ant-..."
+
+   docker compose up --build -d
+   ```
+   This will automatically build the Next.js app, execute the Prisma migrations, bind to port `3000`, and persist the SQLite database in the host's `./prisma` directory.
 
 ---
 
@@ -276,4 +379,62 @@ console.log("Completed response:", result.text);
 - `npm run lint`: Validates code files against ESLint configurations.
 - `npm run test`: Executes the SDK unit tests using Bun.
 - `npm run sdk:demo`: Starts the SDK capability demonstration workflow.
+</details>
+
+---
+
+## Architecture Notes & Design Decisions
+
+<details>
+<summary>Click to view Schema Design Decisions</summary>
+
+### Relational Schema (Prisma + SQLite)
+- **User Model**: Employs bcrypt hashing for password storage and unique email constraints to protect authentication.
+- **Conversation Model**: Represents a single chat thread. Keeps metadata like the current model name, provider, and cancellation status.
+- **Message Model**: Stores individual chat turn contents (role: system/user/assistant and raw content). Linked via a foreign key on `conversationId` with a cascade deletion trigger.
+- **InferenceLog Model**: A dedicated, highly indexed table separate from the chat messages. It stores analytical metadata (latencyMs, promptTokens, completionTokens, totalTokens, status, error, requestedAt, respondedAt). Keeping this separate from the messages table allows the dashboard analytics engine to query metrics without fetching heavy text messages.
+</details>
+
+<details>
+<summary>Click to view Architectural Notes (Ingestion, Logging, Scaling, Failures)</summary>
+
+### Ingestion Flow & Logging Strategy
+1. When a chat request begins, the Next.js API route `/api/chat` instantly creates a pending `InferenceLog` record in the database and returns a correlation handle to the client.
+2. The server initializes `streamText` and pipes the SSE stream of tokens directly to the client.
+3. Once the stream successfully completes or throws an exception, the `onFinish` or `catch` handler calculates the latency, fetches token usage, redacts PII from the logs, persists the final assistant message, and updates the `InferenceLog` status to `success` or `error`.
+4. This ensures that even if a client disconnects mid-stream, the log entry is captured, calculating the time elapsed and marking the log as `cancelled` or `error`.
+
+### PII Redaction
+- Before any input or output previews are logged in the database, the system executes a PII redaction scanner that redacts:
+  - Emails (replaced with `[EMAIL]`)
+  - API Keys matching Sk/Gsk/Key patterns (replaced with `[API_KEY]`)
+  - Credit card numbers matching 13-16 digit patterns (replaced with `[CREDIT_CARD]`)
+
+### Scaling Considerations
+- **SQLite Limitation**: SQLite is simple and file-based, meaning concurrent writes lock the entire database. In high-throughput settings, this will bottleneck. Transitioning to PostgreSQL (which is already configured as an option in `prisma/schema.prisma` and `.env`) is the recommended path for production scaling.
+- **Ingestion Offloading**: Under extreme concurrency, writing logs synchronously during the request cycle can increase API latency. We would introduce a message broker (e.g. BullMQ/Redis, RabbitMQ, or Kafka) to offload log writes to a worker pool.
+
+### Failure Handling Assumptions
+- **Third-Party Downtime**: If the Groq API fails or is rate-limited, the system catches the error, marks the `InferenceLog` status as `error`, records the exception trace in the `error` column, and responds with a 502 status so the client app is aware without crashing.
+- **Rate-Limiting**: Integrated Upstash Redis rate limiting on API paths. If rate limits are hit, the client receives a 429 status and the SDK fires `ratelimit:hit`.
+</details>
+
+<details>
+<summary>Click to view Tradeoffs Made</summary>
+
+### 1. Cookies vs JWTs for CLI SDK Session
+- **Decision**: The Next.js app uses `iron-session` (stateless cookie-based session).
+- **Tradeoff**: While stateless cookies are native to browsers, Node.js CLI runtimes do not store cookies by default. To bridge this, we modified the SDK's `HttpClient` to intercept the `Set-Cookie` headers and store/inject the cookie value manually. This avoided implementing a separate JWT auth path on the server.
+
+### 2. Preview Truncation in Logs
+- **Decision**: The `InferenceLog` model stores only the first 500 characters of inputs and outputs.
+- **Tradeoff**: This limits the readability of extremely long prompts in the log viewer but saves significant storage database bloat and query latencies on the dashboard. The complete history is still accessible via the `Message` table.
+</details>
+
+<details>
+<summary>Click to view Future Improvements (With More Time)</summary>
+
+- **Analytics Aggregation**: Pre-calculate metrics hourly or daily into aggregated database tables to speed up dashboard queries for massive log datasets.
+- **Self-Hosted Kubernetes Manifests**: Write Helm charts or Kubernetes YAML configurations for autoscaling the ingestion and web app services in production.
+- **Log Archival Pipeline**: Establish an automated archival pipeline to cold-store logs older than 90 days in S3 or Google Cloud Storage to control SQLite/Postgres database bloat.
 </details>

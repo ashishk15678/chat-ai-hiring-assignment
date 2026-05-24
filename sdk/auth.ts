@@ -17,26 +17,33 @@ export class AuthManager {
     return this._user !== null;
   }
 
-  async login(email: string, password: string): Promise<SessionUser> {
+  /**
+   * Implicit login: fetches or creates user automatically.
+   * No email/password required - each client gets a unique anonymous user ID.
+   * Call on SDK init to hydrate the session.
+   */
+  async loginImplicit(): Promise<SessionUser> {
     try {
       const res = await this.http.request<{ ok: true; data: SessionUser }>(
-        "POST",
-        "/api/auth/login",
-        { body: { email, password } },
+        "GET",
+        "/api/auth/me",
       );
       this._user = res.data;
       this.bus.emit("auth:login", { user: res.data });
       return res.data;
     } catch (err) {
-      const msg = err instanceof Error ? err.message : "Login failed";
-      this.bus.emit("auth:error", { error: msg, context: "login" });
+      const msg = err instanceof Error ? err.message : "Implicit login failed";
+      this.bus.emit("auth:error", { error: msg, context: "implicit-login" });
       throw err;
     }
   }
 
+  /**
+   * Clear the local user state (logout).
+   * Note: session cookie persists on server; this just clears local state.
+   */
   async logout(): Promise<void> {
     try {
-      await this.http.request("POST", "/api/auth/logout");
       this._user = null;
       this.bus.emit("auth:logout", {});
     } catch (err) {
@@ -46,29 +53,11 @@ export class AuthManager {
     }
   }
 
-  async register(
-    email: string,
-    password: string,
-    name?: string,
-  ): Promise<SessionUser> {
-    try {
-      const res = await this.http.request<{ ok: true; data: SessionUser }>(
-        "POST",
-        "/api/auth/register",
-        { body: { email, password, name } },
-      );
-      this._user = res.data;
-      this.bus.emit("auth:register", { user: res.data });
-      return res.data;
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : "Registration failed";
-      this.bus.emit("auth:error", { error: msg, context: "register" });
-      throw err;
-    }
-  }
-
-  /** Hydrates currentUser from the session cookie — call on SDK init. */
-  async me(): Promise<SessionUser | null> {
+  /**
+   * Hydrates currentUser from the session — automatically handles implicit login.
+   * Call on SDK init to ensure the user is authenticated.
+   */
+  async me(): Promise<SessionUser> {
     try {
       const res = await this.http.request<{ ok: true; data: SessionUser }>(
         "GET",
@@ -76,9 +65,11 @@ export class AuthManager {
       );
       this._user = res.data;
       return res.data;
-    } catch {
-      this._user = null;
-      return null;
+    } catch (err) {
+      const msg =
+        err instanceof Error ? err.message : "Failed to fetch session user";
+      this.bus.emit("auth:error", { error: msg, context: "me" });
+      throw err;
     }
   }
 }

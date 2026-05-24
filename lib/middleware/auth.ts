@@ -5,7 +5,7 @@
 // at the top of each protected handler, keeping each route self-contained.
 
 import { NextRequest, NextResponse } from "next/server";
-import { getSession } from "@/lib/session";
+import { getSessionUser } from "@/lib/session";
 import { errorResponse } from "@/lib/utils";
 import type { SessionUser } from "@/lib/sdk/types";
 
@@ -15,6 +15,7 @@ import type { SessionUser } from "@/lib/sdk/types";
 
 /**
  * Returns the session user or a 401 NextResponse.
+ * Also ensures the user exists in the database (creates implicit user if needed).
  *
  * @example
  * const auth = await withAuth(req);
@@ -25,13 +26,16 @@ export async function withAuth(
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   _req: NextRequest,
 ): Promise<SessionUser | NextResponse> {
-  const session = await getSession();
-  if (!session.user) {
-    return NextResponse.json(errorResponse("Authentication required"), {
-      status: 401,
+  try {
+    // getSessionUser() ensures user exists in session AND database
+    const user = await getSessionUser();
+    return user;
+  } catch (err) {
+    console.error("[withAuth] Failed to get/create user:", err);
+    return NextResponse.json(errorResponse("Authentication failed"), {
+      status: 500,
     });
   }
-  return session.user;
 }
 
 /**

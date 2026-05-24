@@ -76,9 +76,23 @@ export function truncate(str: string, length: number): string {
   return str.slice(0, length) + "…";
 }
 
-export const GROQ_MODELS = [
-  { id: "llama-3.3-70b-versatile", label: "Llama 3.3 70B Versatile" },
-  { id: "llama-3.1-8b-instant", label: "Llama 3.1 8B Instant" },
-  { id: "mixtral-8x7b-32768", label: "Mixtral 8x7B" },
-  { id: "gemma2-9b-it", label: "Gemma 2 9B" },
+export interface ModelConfig {
+  id: string;
+  label: string;
+  provider: "groq" | "openai" | "anthropic";
+}
+
+export const ALL_MODELS: ModelConfig[] = [
+  // Groq
+  { id: "llama-3.3-70b-versatile", label: "Llama 3.3 70B", provider: "groq" },
+  { id: "llama-3.1-8b-instant", label: "Llama 3.1 8B", provider: "groq" },
+  { id: "mixtral-8x7b-32768", label: "Mixtral 8x7B", provider: "groq" },
+  { id: "gemma2-9b-it", label: "Gemma 2 9B", provider: "groq" },
+  // OpenAI
+  { id: "gpt-4o", label: "GPT-4o", provider: "openai" },
+  { id: "gpt-4o-mini", label: "GPT-4o Mini", provider: "openai" },
+  { id: "o1-mini", label: "o1 Mini", provider: "openai" },
+  // Anthropic
+  { id: "claude-3-5-sonnet-20241022", label: "Claude 3.5 Sonnet", provider: "anthropic" },
+  { id: "claude-3-5-haiku-20241022", label: "Claude 3.5 Haiku", provider: "anthropic" },
 ];

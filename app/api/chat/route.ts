@@ -23,7 +23,9 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { createGroq } from "@ai-sdk/groq";
-import { streamText } from "ai";
+import { createOpenAI } from "@ai-sdk/openai";
+import { createAnthropic } from "@ai-sdk/anthropic";
+import { streamText, generateText, LanguageModelV1 } from "ai";
 import { db } from "@/lib/db";
 import { InferenceLogger } from "@/lib/sdk/inference-logger";
 import { ChatRequestSchema } from "@/lib/validators";
@@ -64,17 +66,40 @@ export async function POST(req: NextRequest) {
     throw err;
   }
 
-  const { messages, conversationId, model, apiKey } = parsed;
+  const {
+    messages,
+    conversationId,
+    model,
+    apiKey,
+    provider: bodyProvider,
+  } = parsed;
 
   // ── 2. Resolve conversation ─────────────────────────────────────────────────
-  let conversation: { id: string; status: string; title: string } | null = null;
+  let conversation: {
+    id: string;
+    status: string;
+    title: string;
+    provider: string;
+    userId: string | null;
+  } | null = null;
 
   if (conversationId) {
     conversation = await db.conversation.findUnique({
       where: { id: conversationId },
-      select: { id: true, status: true, title: true },
+      select: {
+        id: true,
+        status: true,
+        title: true,
+        provider: true,
+        userId: true,
+      },
     });
     if (!conversation) {
+      return NextResponse.json(errorResponse("Conversation not found"), {
+        status: 404,
+      });
+    }
+    if (conversation.userId && (!user || conversation.userId !== user.id)) {
       return NextResponse.json(errorResponse("Conversation not found"), {
         status: 404,
       });
@@ -85,19 +110,52 @@ export async function POST(req: NextRequest) {
         { status: 409 },
       );
     }
+  }
+
+  // Determine final provider
+  let resolvedProvider = "groq";
+  if (bodyProvider) {
+    resolvedProvider = bodyProvider;
+  } else if (conversation) {
+    resolvedProvider = conversation.provider;
   } else {
+    // Infer provider from the model name
+    const m = model.toLowerCase();
+    if (
+      m.startsWith("gpt-") ||
+      m.startsWith("o1-") ||
+      m.startsWith("o3-") ||
+      m.startsWith("text-embedding-")
+    ) {
+      resolvedProvider = "openai";
+    } else if (m.startsWith("claude-")) {
+      resolvedProvider = "anthropic";
+    } else {
+      resolvedProvider = "groq";
+    }
+  }
+
+  if (!conversationId) {
     // Create new conversation — title derived from the first user message
     const firstUser = messages.find((m) => m.role === "user");
     const title = firstUser ? titleFromMessage(firstUser.content) : "New Chat";
     conversation = await db.conversation.create({
-      data: { title, model, provider: "groq" },
+      data: {
+        title,
+        model,
+        provider: resolvedProvider,
+        userId: user ? user.id : null,
+      },
     });
   }
 
   // ── 3. Persist the new user message ─────────────────────────────────────────
   // The last message in the array is always the one the user just sent.
   if (!conversation) {
-    return NextResponse.json(errorResponse("Failed to resolve or create conversation"), { status: 500 });
+    return NextResponse.json(
+      errorResponse("Failed to resolve or create conversation"),
+      { status: 500 },
+    );
   }
 
   const lastMessage = messages[messages.length - 1];
@@ -119,19 +177,50 @@ export async function POST(req: NextRequest) {
   const logId = await logger.startLog({
     conversationId: conversation.id,
     model,
-    provider: "groq",
+    provider: resolvedProvider,
     inputPreview: lastMessage.content,
     requestedAt,
   });
 
-  // ── 5. Stream via GROQ ────────────────────────────────────────────────────
-  const groq = createGroq({
-    apiKey: apiKey || process.env.GROQ_API_KEY || "",
-  });
+  // ── 5. Stream via chosen Provider ─────────────────────────────────────────
+  const envKeyMap = {
+    openai: process.env.OPENAI_API_KEY,
+    anthropic: process.env.ANTHROPIC_API_KEY,
+    groq: process.env.GROQ_API_KEY,
+  };
+  const finalApiKey =
+    apiKey || envKeyMap[resolvedProvider as keyof typeof envKeyMap];
+  if (!finalApiKey || finalApiKey.trim() === "") {
+    return NextResponse.json(
+      errorResponse(
+        `No API key available for ${resolvedProvider} provider. ` +
+          `Set ${resolvedProvider.toUpperCase()}_API_KEY in environment or provide apiKey in request body.`,
+      ),
+      { status: 401 },
+    );
+  }
+
+  let modelInstance;
+  if (resolvedProvider === "openai") {
+    const openai = createOpenAI({
+      apiKey: finalApiKey,
+    });
+    modelInstance = openai(model);
+  } else if (resolvedProvider === "anthropic") {
+    const anthropic = createAnthropic({
+      apiKey: finalApiKey,
+    });
+    modelInstance = anthropic(model);
+  } else {
+    const groq = createGroq({
+      apiKey: finalApiKey,
+    });
+    modelInstance = groq(model);
+  }
 
   try {
     const result = streamText({
-      model: groq(model),
+      model: modelInstance as LanguageModelV1,
       messages,
       onFinish: async ({ text, usage, finishReason }) => {
         const latencyMs = Date.now() - startTime;
@@ -182,6 +271,104 @@ export async function POST(req: NextRequest) {
       },
     });
   } catch (err) {
+    const isStreamingError =
+      err instanceof Error &&
+      (err.message.toLowerCase().includes("streaming") ||
+        err.message.toLowerCase().includes("stream") ||
+        err.message.toLowerCase().includes("not supported") ||
+        err.message.toLowerCase().includes("unsupported") ||
+        err.name.includes("UnsupportedFunctionError"));
+
+    if (isStreamingError) {
+      console.warn(
+        "[chat] Streaming not supported by model. Falling back to generateText.",
+      );
+      try {
+        const { text, usage, finishReason } = await generateText({
+          model: modelInstance as LanguageModelV1,
+          messages,
+        });
+
+        const latencyMs = Date.now() - startTime;
+
+        // Persist assistant message
+        let assistantMessageId: string | undefined;
+        try {
+          const assistantMsg = await db.message.create({
+            data: {
+              conversationId: conversation.id,
+              role: "assistant",
+              content: text,
+            },
+          });
+          assistantMessageId = assistantMsg.id;
+        } catch (dbErr) {
+          console.error(
+            "[chat] Fallback: Failed to persist assistant message:",
+            dbErr,
+          );
+        }
+
+        // Update conversation timestamp
+        await db.conversation.update({
+          where: { id: conversation.id },
+          data: { updatedAt: new Date() },
+        });
+
+        // Complete the log
+        const status =
+          finishReason === "stop" || finishReason === "length"
+            ? "success"
+            : "error";
+        await logger.completeLog(logId, {
+          messageId: assistantMessageId,
+          latencyMs,
+          promptTokens: usage.promptTokens,
+          completionTokens: usage.completionTokens,
+          totalTokens: usage.totalTokens,
+          outputPreview: text,
+          respondedAt: new Date(),
+          status,
+        });
+
+        // Return a simulated stream to the client so it works with the client's SDK
+        const sseLines = [
+          `0:${JSON.stringify(text)}\n`,
+          `d:${JSON.stringify({
+            finishReason,
+            usage: {
+              promptTokens: usage.promptTokens,
+              completionTokens: usage.completionTokens,
+              totalTokens: usage.totalTokens,
+            },
+          })}\n`,
+        ].join("");
+
+        return new Response(sseLines, {
+          headers: {
+            "Content-Type": "text/event-stream; charset=utf-8",
+            "X-Conversation-Id": conversation.id,
+          },
+        });
+      } catch (fallbackErr) {
+        const fallbackError =
+          fallbackErr instanceof Error
+            ? fallbackErr.message
+            : "Unknown fallback error";
+        await logger.failLog(logId, {
+          error: fallbackError,
+          latencyMs: Date.now() - startTime,
+        });
+        console.error("[chat] Fallback generateText failed:", fallbackErr);
+        return NextResponse.json(
+          errorResponse("Model request failed during fallback", fallbackError),
+          {
+            status: 502,
+          },
+        );
+      }
+    }
+
     const error = err instanceof Error ? err.message : "Unknown error";
     await logger.failLog(logId, {
       error,

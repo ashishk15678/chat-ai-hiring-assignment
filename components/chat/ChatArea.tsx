@@ -17,9 +17,9 @@ import { useEffect, useRef, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { MessageInput } from "./MessageInput";
 import { useApiKey } from "@/components/providers";
-import { GROQ_MODELS } from "@/lib/utils";
+import { ALL_MODELS } from "@/lib/utils";
 import { cn } from "@/lib/utils";
-import { Bot, Zap } from "lucide-react";
+import { Bot } from "lucide-react";
 import type { Message } from "ai";
 import { MessageItem } from "./MessageItem";
 
@@ -46,6 +46,18 @@ export function ChatArea({
 
   const [selectedModel, setSelectedModel] = useState(initialModel);
   const isCancelled = conversationStatus === "cancelled";
+  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setIsDropdownOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const isNewChat = !conversationId;
@@ -126,25 +138,64 @@ export function ChatArea({
         </div>
 
         {/* Model selector */}
-        <div className="flex items-center gap-2">
-          <Zap size={13} className="text-primary" />
-          <select
-            value={selectedModel}
-            onChange={(e) => setSelectedModel(e.target.value)}
-            disabled={!!conversationId} // lock model after first message
+        <div className="relative" ref={dropdownRef}>
+          <button
+            onClick={() => !conversationId && setIsDropdownOpen(!isDropdownOpen)}
+            disabled={!!conversationId}
             className={cn(
-              "text-xs bg-transparent border border-border rounded-lg px-2 py-1.5 text-muted-foreground",
-              "focus:outline-none focus:ring-1 focus:ring-ring cursor-pointer",
-              "hover:text-foreground transition-colors",
-              conversationId && "opacity-60 cursor-not-allowed",
+              "flex items-center gap-2 text-xs bg-muted/40 border border-border rounded-lg px-2.5 py-1.5 text-muted-foreground select-none",
+              "focus:outline-none focus:ring-1 focus:ring-ring cursor-pointer hover:bg-muted/80",
+              "hover:text-foreground transition-all duration-200",
+              conversationId && "opacity-60 cursor-not-allowed hover:bg-muted/40"
             )}
           >
-            {GROQ_MODELS.map((m) => (
-              <option key={m.id} value={m.id} className="bg-background">
-                {m.label}
-              </option>
-            ))}
-          </select>
+            {getProviderLogo(ALL_MODELS.find(m => m.id === selectedModel)?.provider ?? "groq")}
+            <span className="font-medium text-foreground">
+              {ALL_MODELS.find(m => m.id === selectedModel)?.label ?? selectedModel}
+            </span>
+            {!conversationId && (
+              <svg className="w-3 h-3 text-muted-foreground" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 9l-7 7-7-7" />
+              </svg>
+            )}
+          </button>
+
+          {isDropdownOpen && (
+            <div className="absolute right-0 mt-1.5 w-56 rounded-xl border border-border bg-popover text-popover-foreground shadow-lg z-50 py-1.5 animate-in fade-in slide-in-from-top-1 duration-100">
+              <div className="px-2.5 py-1 text-[10px] font-bold text-muted-foreground uppercase tracking-wider">
+                Select Inference Model
+              </div>
+              <div className="max-h-60 overflow-y-auto">
+                {ALL_MODELS.map((m) => {
+                  const isSelected = m.id === selectedModel;
+                  return (
+                    <button
+                      key={m.id}
+                      onClick={() => {
+                        setSelectedModel(m.id);
+                        setIsDropdownOpen(false);
+                      }}
+                      className={cn(
+                        "flex items-center justify-between w-full text-left px-3 py-2.5 text-xs transition-colors",
+                        "hover:bg-accent hover:text-accent-foreground",
+                        isSelected ? "bg-accent/40 font-semibold text-foreground" : "text-muted-foreground"
+                      )}
+                    >
+                      <div className="flex items-center gap-2.5">
+                        {getProviderLogo(m.provider)}
+                        <span>{m.label}</span>
+                      </div>
+                      {isSelected && (
+                        <svg className="w-3.5 h-3.5 text-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                        </svg>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
         </div>
       </div>
 
@@ -192,8 +243,38 @@ export function ChatArea({
   );
 }
 
+function OpenAIResetIcon() {
+  return (
+    <svg className="w-3.5 h-3.5 text-emerald-500 fill-current shrink-0" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+      <path d="M21.3 10.7a5.4 5.4 0 0 0-2-3.8 5.6 5.6 0 0 0-5.7-.9 5.5 5.5 0 0 0-4.6-2.5A5.6 5.6 0 0 0 3.7 8a5.5 5.5 0 0 0-.8 5 5.6 5.6 0 0 0 2 3.8 5.6 5.6 0 0 0 5.7.9 5.5 5.5 0 0 0 4.6 2.5 5.6 5.6 0 0 0 5.3-4.6 5.5 5.5 0 0 0 .8-5zm-11.4 8a3.7 3.7 0 0 1-1.8-.5l3.2-1.9a1 1 0 0 0 .5-.8V11l2.5 1.4v2.9a3.7 3.7 0 0 1-4.4 3.4zm-6.2-4.7a3.7 3.7 0 0 1 0-1.8l3.2 1.8a1 1 0 0 0 .9 0L10.3 12.8v-2.8L7.8 8.6a3.7 3.7 0 0 1-4.1 6.8zm.8-6.9a3.7 3.7 0 0 1 1.8-1.3l1.3 3.3a1 1 0 0 0 .4.5l2.5-1.4v-2.9a3.7 3.7 0 0 1-6 1.8zm11.3 1.8L13.7 11a1 1 0 0 0-.5-.8L10.7 8.8v-2.8a3.7 3.7 0 0 1 6 1.8zm2.4 4.7a3.7 3.7 0 0 1-1.8 1.3l-1.3-3.3a1 1 0 0 0-.4-.5L13.7 11.2v-2.8a3.7 3.7 0 0 1 4.4 3.4zm-7.6 1.4v-2.8l-2.5-1.4v-2.9a3.7 3.7 0 0 1 4.3-3.4 3.7 3.7 0 0 1 1.8.5l-3.2 1.9a1 1 0 0 0-.4.8z"/>
+    </svg>
+  );
+}
+
+function AnthropicResetIcon() {
+  return (
+    <svg className="w-3.5 h-3.5 text-amber-600 fill-current shrink-0" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+      <path d="M18.82 20.38h-2.51L15.1 16.7h-6.2l-1.21 3.68H5.18L10.72 4.2h2.56zm-4.32-6.08L12 6.87l-2.5 7.43z"/>
+    </svg>
+  );
+}
+
+function GroqResetIcon() {
+  return (
+    <svg className="w-3.5 h-3.5 text-orange-500 fill-current shrink-0" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+      <path d="M19 10h-6.5l2-8h-3l-5 12h5.5l-2 8z"/>
+    </svg>
+  );
+}
+
+function getProviderLogo(provider: "groq" | "openai" | "anthropic") {
+  if (provider === "openai") return <OpenAIResetIcon />;
+  if (provider === "anthropic") return <AnthropicResetIcon />;
+  return <GroqResetIcon />;
+}
+
 function EmptyState({ model }: { model: string }) {
-  const modelLabel = GROQ_MODELS.find((m) => m.id === model)?.label ?? model;
+  const modelLabel = ALL_MODELS.find((m) => m.id === model)?.label ?? model;
   return (
     <div className="flex flex-col items-center justify-center h-full gap-6 px-4 pb-24">
       <div className="flex items-center justify-center w-14 h-14 rounded-2xl bg-primary/10 border border-primary/20">
