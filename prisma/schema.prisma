@@ -1,0 +1,80 @@
+// prisma/schema.prisma
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = "file:./dev.db"
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String
+  name         String?
+  role         String   @default("user")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@map("users")
+}
+
+model Conversation {
+  id          String    @id @default(cuid())
+  title       String    @default("New Chat")
+  model       String    @default("llama-3.3-70b-versatile")
+  provider    String    @default("groq")
+  status      String    @default("active")
+  cancelledAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  messages Message[]
+  logs     InferenceLog[]
+
+  @@map("conversations")
+}
+
+model Message {
+  id             String   @id @default(cuid())
+  conversationId String
+  role           String
+  content        String
+  createdAt      DateTime @default(now())
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  InferenceLog InferenceLog[]
+
+  @@index([conversationId])
+  @@map("messages")
+}
+
+model InferenceLog {
+  id               String    @id @default(cuid())
+  conversationId   String
+  messageId        String?
+  model            String
+  provider         String
+  status           String    @default("pending") // "pending" | "success" | "error" | "cancelled"
+  inputPreview     String?
+  outputPreview    String?
+  promptTokens     Int?
+  completionTokens Int?
+  totalTokens      Int?
+  latencyMs        Int?
+  error            String?
+  requestedAt      DateTime
+  respondedAt      DateTime?
+  createdAt        DateTime  @default(now())
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  message      Message?     @relation(fields: [messageId], references: [id], onDelete: SetNull)
+
+  @@index([conversationId])
+  @@index([requestedAt])
+  @@index([status])
+  @@map("inference_logs")
+}
