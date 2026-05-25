@@ -88,12 +88,6 @@ The main chat interface showing real-time streaming responses:
 
 ![Chat Interface](screenshots/Screenshot%20From%202026-05-24%2023-30-51.png)
 
-Features visible:
-- Clean, minimalist chat UI
-- Model selection dropdown
-- Real-time message streaming
-- Conversation ID display
-- User-friendly message input area
 </details>
 
 <details>
@@ -102,14 +96,6 @@ Features visible:
 The comprehensive analytics dashboard tracking system metrics:
 
 ![Analytics Dashboard](screenshots/Screenshot%20From%202026-05-24%2023-31-09.png)
-
-Displays:
-- Token consumption metrics
-- Request counts and statistics
-- Response latency tracking
-- Error rate visualization
-- Historical activity trends
-- Per-model performance breakdown
 </details>
 
 <details>
@@ -119,12 +105,6 @@ User's conversation history and management interface:
 
 ![Conversation List](screenshots/Screenshot%20From%202026-05-24%2023-32-29.png)
 
-Includes:
-- List of all user conversations
-- Conversation metadata (title, model, creation date)
-- Quick access to past conversations
-- Conversation status indicators
-- Easy navigation between chats
 </details>
 
 <details>
@@ -134,14 +114,6 @@ Complete demonstration of the application workflow:
 
 ![Demo Recording](screenshots/Screencast%20From%202026-05-24%2023-31-26.webm)
 
-The recording demonstrates:
-- ✓ User navigating to the chat interface
-- ✓ Sending a message to the LLM
-- ✓ Real-time streaming response display
-- ✓ Token count and latency tracking
-- ✓ Analytics dashboard metrics update
-- ✓ Conversation history preservation
-- ✓ Switching between conversations
 </details>
 
 ---
